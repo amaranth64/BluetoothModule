@@ -1,0 +1,10 @@
+<resources>
+    <string name="paired_devices">Paired devices</string>
+    <string name="search_devices">Scanned devices</string>
+    <string name="empty">Empty</string>
+    <string name="bluetooth_on">Bluetooth On</string>
+
+    <string name="hello_blank_fragment">Hello blank fragment</string>
+    <string name="bluetooth_module_on">Bluetooth On</string>
+    <string name="bluetooth_module_off">Bluetooth Off</string>
+</resources>
