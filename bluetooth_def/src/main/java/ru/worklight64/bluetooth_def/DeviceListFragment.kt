@@ -5,7 +5,11 @@ import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
-import android.content.*
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
@@ -17,8 +21,7 @@ import android.view.ViewGroup
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.recyclerview.widget.LinearLayoutManager
-import changeButtonColor
-import checkBtPermissions
+
 import com.google.android.material.snackbar.Snackbar
 import ru.worklight64.bluetooth_def.databinding.FragBluetoothListBinding
 
@@ -30,6 +33,7 @@ class DeviceListFragment : Fragment(), ItemAdapter.Listener {
     private lateinit var binding: FragBluetoothListBinding
     private lateinit var btLauncher: ActivityResultLauncher<Intent>
     private lateinit var pLauncher: ActivityResultLauncher<Array<String>>
+
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -46,11 +50,8 @@ class DeviceListFragment : Fragment(), ItemAdapter.Listener {
         }
         binding.imBluetoothSearch.setOnClickListener {
             try{
-                discoveryAdapter.submitList(null)
-                binding.imBluetoothSearch.isEnabled = false
                 bAdapter?.startDiscovery()
             } catch (e: SecurityException){
-
             }
         }
         intentFilters()
@@ -63,12 +64,11 @@ class DeviceListFragment : Fragment(), ItemAdapter.Listener {
 
     private fun initRcViews() = with(binding){
         rcViewPaired.layoutManager = LinearLayoutManager(requireContext())
-        itemAdapter = ItemAdapter(this@DeviceListFragment)
-        rcViewPaired.adapter = itemAdapter
-
         rcViewSearch.layoutManager = LinearLayoutManager(requireContext())
-        discoveryAdapter = ItemAdapter(this@DeviceListFragment)
-        rcViewSearch.adapter = discoveryAdapter
+        itemAdapter = ItemAdapter(this@DeviceListFragment, false)
+        //discoveryAdapter = ItemAdapter(this@DeviceListFragment, true)
+        rcViewPaired.adapter = itemAdapter
+        //rcViewSearch.adapter = discoveryAdapter
     }
 
     private fun getPairedDevices(){
@@ -88,6 +88,7 @@ class DeviceListFragment : Fragment(), ItemAdapter.Listener {
         } catch (e: SecurityException){
 
         }
+
     }
 
     private fun initBtAdapter(){
@@ -99,8 +100,20 @@ class DeviceListFragment : Fragment(), ItemAdapter.Listener {
         if (bAdapter?.isEnabled == true){
             changeButtonColor(binding.imBluetoothOn, Color.GREEN)
             getPairedDevices()
-        } else {
-            changeButtonColor(binding.imBluetoothOn, Color.RED)
+        }
+    }
+
+    private fun registerBtLauncher(){
+        btLauncher = registerForActivityResult(
+            ActivityResultContracts.StartActivityForResult()
+        ){
+            if (it.resultCode == Activity.RESULT_OK){
+                changeButtonColor(binding.imBluetoothOn, Color.GREEN)
+                getPairedDevices()
+                Snackbar.make(binding.root, "Блютуз включен!", Snackbar.LENGTH_LONG).show()
+            } else {
+                Snackbar.make(binding.root, "Блютуз выключен!", Snackbar.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -115,7 +128,7 @@ class DeviceListFragment : Fragment(), ItemAdapter.Listener {
         if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.S){
             pLauncher.launch(arrayOf(
                 Manifest.permission.BLUETOOTH_CONNECT,
-                //Manifest.permission.ACCESS_FINE_LOCATION
+                Manifest.permission.ACCESS_FINE_LOCATION
             ))
         } else {
             pLauncher.launch(arrayOf(
@@ -132,53 +145,34 @@ class DeviceListFragment : Fragment(), ItemAdapter.Listener {
         }
     }
 
-
-    private fun registerBtLauncher(){
-        btLauncher = registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ){
-            if (it.resultCode == Activity.RESULT_OK){
-                changeButtonColor(binding.imBluetoothOn, Color.GREEN)
-                getPairedDevices()
-                Snackbar.make(binding.root, getString(R.string.bluetooth_module_on), Snackbar.LENGTH_LONG).show()
-            } else {
-                Snackbar.make(binding.root, getString(R.string.bluetooth_module_off), Snackbar.LENGTH_LONG).show()
-            }
-        }
-    }
-
     private fun saveMac(mac: String){
         val editor = preferences?.edit()
         editor?.putString(BluetoothConstants.MAC, mac)
         editor?.apply()
     }
-    override fun onClick(device: ListItem) {
-        Log.d("MyLog", device.toString())
-        saveMac(device.device.address)
+
+    override fun onClick(item: ListItem) {
+        saveMac(item.device.address)
     }
 
     private val bReceiver = object : BroadcastReceiver(){
         override fun onReceive(p0: Context?, intent: Intent?) {
-            when (intent?.action) {
-                BluetoothDevice.ACTION_FOUND -> {
-                    try{
-                        val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
-                        val list = mutableSetOf<ListItem>()
-                        list.addAll(discoveryAdapter.currentList)
-                        if(device != null) list.add(ListItem(device, false))
-                        discoveryAdapter.submitList(list.toList())
-                        Log.d("MyLog", "Device: ${device?.name}")
-                    } catch (e: SecurityException){
-
-                    }
-                }
-                BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
+            if(intent?.action == BluetoothDevice.ACTION_FOUND){
+                val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                val list = mutableSetOf<ListItem>()
+                list.addAll(discoveryAdapter.currentList)
+                if(device != null) list.add(ListItem(device, false))
+                discoveryAdapter.submitList(list.toList())
+                binding.tvEmptySearch.visibility = if(list.isEmpty()) View.VISIBLE else View.GONE
+                try{
+                    Log.d("MyLog", "Device: ${device?.name}")
+                } catch (e: SecurityException){
 
                 }
-                BluetoothAdapter.ACTION_DISCOVERY_FINISHED -> {
-                    Log.d("MyLog", "Search finished")
-                    binding.imBluetoothSearch.isEnabled = true
-                }
+            } else if(intent?.action == BluetoothDevice.ACTION_BOND_STATE_CHANGED){
+                getPairedDevices()
+            } else if(intent?.action == BluetoothAdapter.ACTION_DISCOVERY_FINISHED){
+
             }
         }
     }

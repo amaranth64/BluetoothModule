@@ -1,3 +1,5 @@
+package ru.worklight64.bluetooth_def
+
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
